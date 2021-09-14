@@ -10,11 +10,13 @@ package module
 // AgentContext serializes the agent context to JSON
 // easyjson:json
 type AgentContext struct {
-	RuleID        string `json:"rule_id"`
-	RuleVersion   string `json:"rule_version,omitempty"`
-	PolicyName    string `json:"policy_name,omitempty"`
-	PolicyVersion string `json:"policy_version,omitempty"`
-	Version       string `json:"version,omitempty"`
+	RuleID         string `json:"rule_id,omitempty"`
+	RuleVersion    string `json:"rule_version,omitempty"`
+	PolicyName     string `json:"policy_name,omitempty"`
+	PolicyVersion  string `json:"policy_version,omitempty"`
+	ProfileName    string `json:"profile_name,omitempty"`
+	ProfileVersion string `json:"profile_version,omitempty"`
+	Version        string `json:"version,omitempty"`
 }
 
 // Signal - Rule event wrapper used to send an event to the backend

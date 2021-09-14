@@ -30,7 +30,7 @@ import (
 )
 
 type pendingMsg struct {
-	ruleID    string
+	id        string
 	data      []byte
 	tags      map[string]bool
 	service   string
@@ -160,7 +160,7 @@ func (a *APIServer) start(ctx context.Context) {
 				}
 
 				m := &api.SecurityEventMessage{
-					RuleID:  msg.ruleID,
+					ID:      msg.id,
 					Data:    msg.data,
 					Service: msg.service,
 					Tags:    tags,
@@ -233,22 +233,45 @@ func (a *APIServer) RunSelfTest(ctx context.Context, params *api.RunSelfTestPara
 	}, nil
 }
 
-// SendEvent forwards events sent by the runtime security module to Datadog
-func (a *APIServer) SendEvent(rule *rules.Rule, event Event, extTagsCb func() []string, service string) {
+// SendRuleEvent forwards events sent by the runtime security module to Datadog
+func (a *APIServer) SendRuleEvent(rule *rules.Rule, event Event, extTagsCb func() []string, service string) {
 	agentContext := &AgentContext{
 		RuleID:      rule.Definition.ID,
 		RuleVersion: rule.Definition.Version,
 		Version:     version.AgentVersion,
 	}
 
-	ruleEvent := &Signal{
-		Title:        rule.Definition.Description,
-		AgentContext: agentContext,
-	}
-
 	if policy := rule.Definition.Policy; policy != nil {
 		agentContext.PolicyName = policy.Name
 		agentContext.PolicyVersion = policy.Version
+	}
+
+	tags := make(map[string]bool)
+	tags["rule_id:"+rule.Definition.ID] = true
+
+	for _, tag := range rule.Tags {
+		tags[tag] = true
+	}
+
+	a.sendEvent(agentContext, event, rule.ID, rule.Definition.Description, tags, extTagsCb, service)
+}
+
+// SendProfileEvent forwards events sent by the runtime security module to Datadog
+func (a *APIServer) SendProfileEvent(profile *rules.Profile, event Event, extTagsCb func() []string, service string) {
+	agentContext := &AgentContext{
+		ProfileName:    profile.Name,
+		ProfileVersion: profile.Version,
+		Version:        version.AgentVersion,
+	}
+
+	tags := make(map[string]bool)
+	a.sendEvent(agentContext, event, profile.Name, fmt.Sprintf("Event not part of profile %s", profile.Name), tags, extTagsCb, service)
+}
+
+func (a *APIServer) sendEvent(agentContext *AgentContext, event Event, id, title string, tags map[string]bool, extTagsCb func() []string, service string) {
+	ruleEvent := &Signal{
+		Title:        title,
+		AgentContext: agentContext,
 	}
 
 	probeJSON, err := json.Marshal(event)
@@ -265,25 +288,19 @@ func (a *APIServer) SendEvent(rule *rules.Rule, event Event, extTagsCb func() []
 
 	data := append(probeJSON[:len(probeJSON)-1], ',')
 	data = append(data, ruleEventJSON[1:]...)
-	seclog.Tracef("Sending event message for rule `%s` to security-agent `%s`", rule.ID, string(data))
-
-	msg := &pendingMsg{
-		ruleID:    rule.Definition.ID,
-		data:      data,
-		extTagsCb: extTagsCb,
-		tags:      make(map[string]bool),
-		service:   service,
-		sendAfter: time.Now().Add(a.retention),
-	}
-
-	msg.tags["rule_id:"+rule.Definition.ID] = true
-
-	for _, tag := range rule.Tags {
-		msg.tags[tag] = true
-	}
+	seclog.Tracef("Sending event message to security-agent `%s`", string(data))
 
 	for _, tag := range event.GetTags() {
-		msg.tags[tag] = true
+		tags[tag] = true
+	}
+
+	msg := &pendingMsg{
+		id:        id,
+		data:      data,
+		extTagsCb: extTagsCb,
+		tags:      tags,
+		service:   service,
+		sendAfter: time.Now().Add(a.retention),
 	}
 
 	a.enqueue(msg)
@@ -295,11 +312,11 @@ func (a *APIServer) expireEvent(msg *api.SecurityEventMessage) {
 	defer a.expiredEventsLock.RUnlock()
 
 	// Update metric
-	count, ok := a.expiredEvents[msg.RuleID]
+	count, ok := a.expiredEvents[msg.ID]
 	if ok {
 		atomic.AddInt64(count, 1)
 	}
-	seclog.Tracef("the event server channel is full, an event of ID %v was dropped", msg.RuleID)
+	seclog.Tracef("the event server channel is full, an event of ID %v was dropped", msg.ID)
 }
 
 // GetStats returns a map indexed by ruleIDs that describes the amount of events
@@ -343,7 +360,7 @@ func (a *APIServer) Apply(ruleIDs []rules.RuleID) {
 func NewAPIServer(cfg *config.Config, probe *sprobe.Probe, client *statsd.Client) *APIServer {
 	es := &APIServer{
 		msgs:          make(chan *api.SecurityEventMessage, cfg.EventServerBurst*3),
-		expiredEvents: make(map[rules.RuleID]*int64),
+		expiredEvents: make(map[string]*int64),
 		rate:          NewLimiter(rate.Limit(cfg.EventServerRate), cfg.EventServerBurst),
 		statsdClient:  client,
 		probe:         probe,

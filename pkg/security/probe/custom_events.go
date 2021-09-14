@@ -180,6 +180,9 @@ func (r *PoliciesIgnored) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// ProfilesIgnored holds the errors
+type ProfilesIgnored = PoliciesIgnored
+
 // RuleLoaded defines a loaded rule
 // easyjson:json
 type RuleLoaded struct {
@@ -188,10 +191,19 @@ type RuleLoaded struct {
 	Expression string `json:"expression"`
 }
 
-// PolicyLoaded is used to report policy was loaded
+// PolicyLoaded is used to report that a policy was loaded
 // easyjson:json
 type PolicyLoaded struct {
 	Version      string
+	RulesLoaded  []*RuleLoaded  `json:"rules_loaded"`
+	RulesIgnored []*RuleIgnored `json:"rules_ignored,omitempty"`
+}
+
+// ProfileLoaded is used to report that a profile was loaded
+// easyjson:json
+type ProfileLoaded struct {
+	Version      string
+	Selector     string
 	RulesLoaded  []*RuleLoaded  `json:"rules_loaded"`
 	RulesIgnored []*RuleIgnored `json:"rules_ignored,omitempty"`
 }
@@ -202,23 +214,27 @@ type RulesetLoadedEvent struct {
 	Timestamp       time.Time        `json:"date"`
 	PoliciesLoaded  []*PolicyLoaded  `json:"policies"`
 	PoliciesIgnored *PoliciesIgnored `json:"policies_ignored,omitempty"`
+	ProfilesLoaded  []*ProfileLoaded `json:"profiles"`
+	ProfilesIgnored *ProfilesIgnored `json:"profiles_ignored,omitempty"`
 	MacrosLoaded    []rules.MacroID  `json:"macros_loaded"`
 }
 
 // NewRuleSetLoadedEvent returns the rule and a populated custom event for a new_rules_loaded event
-func NewRuleSetLoadedEvent(rs *rules.RuleSet, err *multierror.Error) (*rules.Rule, *CustomEvent) {
-	mp := make(map[string]*PolicyLoaded)
+func NewRuleSetLoadedEvent(re *rules.RuleEngine, err *multierror.Error) (*rules.Rule, *CustomEvent) {
+	policiesLoaded := make(map[string]*PolicyLoaded)
+	profilesLoaded := make(map[string]*ProfileLoaded)
 
 	var policy *PolicyLoaded
+	var profile *ProfileLoaded
 	var exists bool
 
 	// rule successfully loaded
-	for _, rule := range rs.GetRules() {
+	for _, rule := range re.GetPolicy().GetRules() {
 		policyName := rule.Definition.Policy.Name
 
-		if policy, exists = mp[policyName]; !exists {
+		if policy, exists = policiesLoaded[policyName]; !exists {
 			policy = &PolicyLoaded{Version: rule.Definition.Policy.Version}
-			mp[policyName] = policy
+			policiesLoaded[policyName] = policy
 		}
 		policy.RulesLoaded = append(policy.RulesLoaded, &RuleLoaded{
 			ID:         rule.ID,
@@ -227,29 +243,67 @@ func NewRuleSetLoadedEvent(rs *rules.RuleSet, err *multierror.Error) (*rules.Rul
 		})
 	}
 
+	for _, activeProfile := range re.GetProfiles() {
+		for _, rule := range activeProfile.Rules {
+			policyName := rule.Profile.Name
+
+			if profile, exists = profilesLoaded[policyName]; !exists {
+				profile = &ProfileLoaded{Version: rule.Profile.Version}
+				profilesLoaded[policyName] = profile
+			}
+			profile.RulesLoaded = append(profile.RulesLoaded, &RuleLoaded{
+				ID:         rule.ID,
+				Version:    rule.Version,
+				Expression: rule.Expression,
+			})
+		}
+	}
+
 	// rules ignored due to errors
 	if err != nil && err.Errors != nil {
 		for _, err := range err.Errors {
 			if rerr, ok := err.(*rules.ErrRuleLoad); ok {
-				policyName := rerr.Definition.Policy.Name
+				if rerr.Definition.Policy != nil {
+					policyName := rerr.Definition.Policy.Name
 
-				if policy, exists = mp[policyName]; !exists {
-					policy = &PolicyLoaded{}
-					mp[policyName] = policy
+					if policy, exists = policiesLoaded[policyName]; !exists {
+						policy = &PolicyLoaded{}
+						policiesLoaded[policyName] = policy
+					}
+
+					policy.RulesIgnored = append(policy.RulesIgnored, &RuleIgnored{
+						ID:         rerr.Definition.ID,
+						Version:    rerr.Definition.Version,
+						Expression: rerr.Definition.Expression,
+						Reason:     rerr.Err.Error(),
+					})
+				} else {
+					profileName := rerr.Definition.Profile.Name
+
+					if profile, exists = profilesLoaded[profileName]; !exists {
+						profile = &ProfileLoaded{}
+						profilesLoaded[profileName] = profile
+					}
+
+					profile.RulesIgnored = append(policy.RulesIgnored, &RuleIgnored{
+						ID:         rerr.Definition.ID,
+						Version:    rerr.Definition.Version,
+						Expression: rerr.Definition.Expression,
+						Reason:     rerr.Err.Error(),
+					})
 				}
-				policy.RulesIgnored = append(policy.RulesIgnored, &RuleIgnored{
-					ID:         rerr.Definition.ID,
-					Version:    rerr.Definition.Version,
-					Expression: rerr.Definition.Expression,
-					Reason:     rerr.Err.Error(),
-				})
 			}
 		}
 	}
 
 	var policies []*PolicyLoaded
-	for _, policy := range mp {
+	for _, policy := range policiesLoaded {
 		policies = append(policies, policy)
+	}
+
+	var profiles []*ProfileLoaded
+	for _, profile := range profilesLoaded {
+		profiles = append(profiles, profile)
 	}
 
 	return newRule(&rules.RuleDefinition{
@@ -258,7 +312,9 @@ func NewRuleSetLoadedEvent(rs *rules.RuleSet, err *multierror.Error) (*rules.Rul
 			Timestamp:       time.Now(),
 			PoliciesLoaded:  policies,
 			PoliciesIgnored: &PoliciesIgnored{Errors: err},
-			MacrosLoaded:    rs.ListMacroIDs(),
+			ProfilesLoaded:  profiles,
+			ProfilesIgnored: &ProfilesIgnored{Errors: err},
+			MacrosLoaded:    re.GetPolicy().ListMacroIDs(),
 		}.MarshalJSON)
 }
 

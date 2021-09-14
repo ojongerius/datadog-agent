@@ -130,6 +130,10 @@ func easyjsonF642ad3eDecodeGithubComDataDogDatadogAgentPkgSecurityModule1(in *jl
 			out.PolicyName = string(in.String())
 		case "policy_version":
 			out.PolicyVersion = string(in.String())
+		case "profile_name":
+			out.ProfileName = string(in.String())
+		case "profile_version":
+			out.ProfileVersion = string(in.String())
 		case "version":
 			out.Version = string(in.String())
 		default:
@@ -146,29 +150,70 @@ func easyjsonF642ad3eEncodeGithubComDataDogDatadogAgentPkgSecurityModule1(out *j
 	out.RawByte('{')
 	first := true
 	_ = first
-	{
+	if in.RuleID != "" {
 		const prefix string = ",\"rule_id\":"
+		first = false
 		out.RawString(prefix[1:])
 		out.String(string(in.RuleID))
 	}
 	if in.RuleVersion != "" {
 		const prefix string = ",\"rule_version\":"
-		out.RawString(prefix)
+		if first {
+			first = false
+			out.RawString(prefix[1:])
+		} else {
+			out.RawString(prefix)
+		}
 		out.String(string(in.RuleVersion))
 	}
 	if in.PolicyName != "" {
 		const prefix string = ",\"policy_name\":"
-		out.RawString(prefix)
+		if first {
+			first = false
+			out.RawString(prefix[1:])
+		} else {
+			out.RawString(prefix)
+		}
 		out.String(string(in.PolicyName))
 	}
 	if in.PolicyVersion != "" {
 		const prefix string = ",\"policy_version\":"
-		out.RawString(prefix)
+		if first {
+			first = false
+			out.RawString(prefix[1:])
+		} else {
+			out.RawString(prefix)
+		}
 		out.String(string(in.PolicyVersion))
+	}
+	if in.ProfileName != "" {
+		const prefix string = ",\"profile_name\":"
+		if first {
+			first = false
+			out.RawString(prefix[1:])
+		} else {
+			out.RawString(prefix)
+		}
+		out.String(string(in.ProfileName))
+	}
+	if in.ProfileVersion != "" {
+		const prefix string = ",\"profile_version\":"
+		if first {
+			first = false
+			out.RawString(prefix[1:])
+		} else {
+			out.RawString(prefix)
+		}
+		out.String(string(in.ProfileVersion))
 	}
 	if in.Version != "" {
 		const prefix string = ",\"version\":"
-		out.RawString(prefix)
+		if first {
+			first = false
+			out.RawString(prefix[1:])
+		} else {
+			out.RawString(prefix)
+		}
 		out.String(string(in.Version))
 	}
 	out.RawByte('}')

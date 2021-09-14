@@ -122,7 +122,7 @@ func (rsa *RuntimeSecurityAgent) StartEventListener() {
 			if err == io.EOF || in == nil {
 				break
 			}
-			log.Tracef("Got message from rule `%s` for event `%s`", in.RuleID, string(in.Data))
+			log.Tracef("Got message for event `%s`", string(in.Data))
 
 			atomic.AddUint64(&rsa.eventReceived, 1)
 

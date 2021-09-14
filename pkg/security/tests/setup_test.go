@@ -58,6 +58,10 @@ const (
 	getEventTimeout = 10 * time.Second
 )
 
+var (
+	testTimeout = errors.New("timeout")
+)
+
 type stringSlice []string
 
 const testConfig = `---
@@ -109,6 +113,23 @@ rules:
 {{end}}
 `
 
+const testProfile = `---
+selector: {{ .Selector }}
+macros:
+{{range $Macro := .Macros}}
+  - id: {{$Macro.ID}}
+    expression: >-
+      {{$Macro.Expression}}
+{{end}}
+
+rules:
+{{range $Rule := .Rules}}
+  - id: {{$Rule.ID}}
+    expression: >-
+      {{$Rule.Expression}}
+{{end}}
+`
+
 var (
 	disableERPCDentryResolution bool
 	testEnvironment             string
@@ -123,7 +144,11 @@ const (
 )
 
 type testOpts struct {
-	testDir                     string
+	testDir  string
+	profiles map[string]struct {
+		selector string
+		rules    []*rules.RuleDefinition
+	}
 	disableFilters              bool
 	disableApprovers            bool
 	disableDiscarders           bool
@@ -155,16 +180,18 @@ func (to testOpts) Equal(opts testOpts) bool {
 }
 
 type testModule struct {
-	config       *config.Config
-	opts         testOpts
-	st           *simpleTest
-	module       *module.Module
-	probe        *sprobe.Probe
-	probeHandler *testProbeHandler
-	listener     net.Listener
-	discarders   chan *testDiscarder
-	cmdWrapper   cmdWrapper
-	ruleHandler  testRuleHandler
+	config         *config.Config
+	opts           testOpts
+	st             *simpleTest
+	module         *module.Module
+	probe          *sprobe.Probe
+	probeHandler   *testProbeHandler
+	listener       net.Listener
+	discarders     chan *testDiscarder
+	cmdWrapper     cmdWrapper
+	ruleHandler    testRuleHandler
+	profileHandler testProfileHandler
+	timeout        time.Duration
 }
 
 var testMod *testModule
@@ -176,12 +203,18 @@ type testDiscarder struct {
 }
 
 type ruleHandler func(*sprobe.Event, *rules.Rule)
+type profileHandler func(*sprobe.Event, *rules.Profile)
 type eventHandler func(*sprobe.Event)
 type customEventHandler func(*rules.Rule, *sprobe.CustomEvent)
 
 type testRuleHandler struct {
 	sync.RWMutex
 	callback ruleHandler
+}
+
+type testProfileHandler struct {
+	sync.RWMutex
+	callback profileHandler
 }
 
 type testEventHandler struct {
@@ -356,7 +389,7 @@ func setTestConfig(dir string, opts testOpts) (string, error) {
 		return "", err
 	}
 
-	sysprobeConfig, err := os.Create(path.Join(opts.testDir, "system-probe.yaml"))
+	sysprobeConfig, err := os.Create(path.Join(dir, "system-probe.yaml"))
 	if err != nil {
 		return "", err
 	}
@@ -402,6 +435,43 @@ func setTestPolicy(dir string, macros []*rules.MacroDefinition, rules []*rules.R
 	return testPolicyFile.Name(), nil
 }
 
+func setTestProfile(dir string, selector string, macros []*rules.MacroDefinition, rules []*rules.RuleDefinition) (string, error) {
+	testProfileFile, err := ioutil.TempFile(dir, "secagent-profile.*.profile")
+	if err != nil {
+		return "", err
+	}
+
+	fail := func(err error) error {
+		os.Remove(testProfileFile.Name())
+		return err
+	}
+
+	tmpl, err := template.New("test-profile").Parse(testProfile)
+	if err != nil {
+		return "", fail(err)
+	}
+
+	buffer := new(bytes.Buffer)
+	if err := tmpl.Execute(buffer, map[string]interface{}{
+		"Selector": selector,
+		"Rules":    rules,
+		"Macros":   macros,
+	}); err != nil {
+		return "", fail(err)
+	}
+
+	_, err = testProfileFile.Write(buffer.Bytes())
+	if err != nil {
+		return "", fail(err)
+	}
+
+	if err := testProfileFile.Close(); err != nil {
+		return "", fail(err)
+	}
+
+	return testProfileFile.Name(), nil
+}
+
 func newTestModule(t testing.TB, macroDefs []*rules.MacroDefinition, ruleDefs []*rules.RuleDefinition, opts testOpts) (*testModule, error) {
 	logLevel, found := seelog.LogLevelFromString(logLevelStr)
 	if !found {
@@ -423,6 +493,12 @@ func newTestModule(t testing.TB, macroDefs []*rules.MacroDefinition, ruleDefs []
 		return nil, err
 	}
 	defer os.Remove(cfgFilename)
+
+	if len(opts.profiles) > 0 {
+		for _, profile := range opts.profiles {
+			setTestProfile(st.root, profile.selector, nil, profile.rules)
+		}
+	}
 
 	var cmdWrapper cmdWrapper
 	if testEnvironment == DockerEnvironment {
@@ -481,9 +557,10 @@ func newTestModule(t testing.TB, macroDefs []*rules.MacroDefinition, ruleDefs []
 		discarders:   make(chan *testDiscarder, discarderChanLength),
 		probeHandler: &testProbeHandler{module: mod.(*module.Module)},
 		cmdWrapper:   cmdWrapper,
+		timeout:      getEventTimeout,
 	}
 
-	testMod.module.SetRulesetLoadedCallback(func(rs *rules.RuleSet) {
+	testMod.module.SetRulesetLoadedCallback(func(rs *rules.RuleEngine) {
 		log.Infof("Adding test module as listener")
 		rs.AddListener(testMod)
 	})
@@ -545,7 +622,17 @@ func (tm *testModule) RuleMatch(rule *rules.Rule, event eval.Event) {
 	}
 }
 
-func (tm *testModule) EventDiscarderFound(rs *rules.RuleSet, event eval.Event, field eval.Field, eventType eval.EventType) {
+func (tm *testModule) ProfileUnmatch(profile *rules.Profile, event eval.Event) {
+	tm.ruleHandler.RLock()
+	callback := tm.profileHandler.callback
+	tm.ruleHandler.RUnlock()
+
+	if callback != nil {
+		callback(event.(*sprobe.Event), profile)
+	}
+}
+
+func (tm *testModule) EventDiscarderFound(rs *rules.RuleEngine, event eval.Event, field eval.Field, eventType eval.EventType) {
 	e := event.(*sprobe.Event).Retain()
 
 	discarder := &testDiscarder{event: &e, field: field, eventType: eventType}
@@ -556,7 +643,7 @@ func (tm *testModule) EventDiscarderFound(rs *rules.RuleSet, event eval.Event, f
 	}
 }
 
-func (tm *testModule) GetSignal(tb testing.TB, action func() error, cb ruleHandler) error {
+func (tm *testModule) GetSignal(tb testing.TB, action func() error, cb ruleHandler, profileCallbks ...profileHandler) error {
 	tb.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -568,6 +655,15 @@ func (tm *testModule) GetSignal(tb testing.TB, action func() error, cb ruleHandl
 		cancel()
 	})
 
+	if len(profileCallbks) > 0 {
+		tm.RegisterProfileEventHandler(func(e *sprobe.Event, p *rules.Profile) {
+			tb.Helper()
+			profileCallbks[0](e, p)
+			cancel()
+		})
+		defer tm.RegisterProfileEventHandler(nil)
+	}
+
 	defer tm.RegisterRuleEventHandler(nil)
 
 	if err := action(); err != nil {
@@ -576,8 +672,8 @@ func (tm *testModule) GetSignal(tb testing.TB, action func() error, cb ruleHandl
 	}
 
 	select {
-	case <-time.After(getEventTimeout):
-		return errors.New("timeout")
+	case <-time.After(tm.timeout):
+		return testTimeout
 	case <-ctx.Done():
 		return nil
 	}
@@ -587,6 +683,12 @@ func (tm *testModule) RegisterRuleEventHandler(cb ruleHandler) {
 	tm.ruleHandler.Lock()
 	tm.ruleHandler.callback = cb
 	tm.ruleHandler.Unlock()
+}
+
+func (tm *testModule) RegisterProfileEventHandler(cb profileHandler) {
+	tm.profileHandler.Lock()
+	tm.profileHandler.callback = cb
+	tm.profileHandler.Unlock()
 }
 
 func (tm *testModule) GetProbeCustomEvent(tb testing.TB, action func() error, cb func(rule *rules.Rule, event *sprobe.CustomEvent) bool, eventType ...model.EventType) error {
@@ -612,7 +714,7 @@ func (tm *testModule) GetProbeCustomEvent(tb testing.TB, action func() error, cb
 	}
 
 	select {
-	case <-time.After(getEventTimeout):
+	case <-time.After(tm.timeout):
 		return errors.New("timeout")
 	case <-ctx.Done():
 		return nil
@@ -662,7 +764,7 @@ func (tm *testModule) GetProbeEvent(action func() error, cb func(event *sprobe.E
 	}
 
 	select {
-	case <-time.After(getEventTimeout):
+	case <-time.After(tm.timeout):
 		return errors.New("timeout")
 	case <-ctx.Done():
 		return nil
@@ -993,7 +1095,7 @@ func waitForProbeEvent(test *testModule, action func() error, key string, value 
 			return true
 		}
 		return false
-	}, getEventTimeout, eventType)
+	}, test.timeout, eventType)
 }
 
 func waitForOpenDiscarder(test *testModule, filename string) error {

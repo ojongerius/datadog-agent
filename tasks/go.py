@@ -451,6 +451,8 @@ def generate_protobuf(ctx):
         )
     )
 
+    generate(ctx, run="protoc", targets=["./pkg/security/api/..."])
+
 
 @task
 def reset(ctx):
@@ -471,11 +473,14 @@ def reset(ctx):
 
 
 @task
-def generate(ctx, mod="mod"):
+def generate(ctx, mod="mod", run="", targets=GO_GENERATE_TARGETS):
     """
     Run go generate required package
     """
-    ctx.run("go generate -mod={} ".format(mod) + " ".join(GO_GENERATE_TARGETS))
+    ctx.run("go generate {run} -mod={mod} ".format(
+        mod=mod,
+        run="-run="+run if run else "",
+    ) + " ".join(targets))
     print("go generate ran successfully")
 
 

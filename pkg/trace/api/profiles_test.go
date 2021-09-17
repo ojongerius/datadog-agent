@@ -123,7 +123,7 @@ func TestProfilingEndpoints(t *testing.T) {
 				"https://dd.datad0g.com":          {"api_key_3"},
 			},
 		})()
-		urls, keys, err := profilingEndpoints("api_key_0")
+		urls, keys, err := profilingEndpoints("test_api_key")
 		assert.NoError(t, err)
 		expectedURLs := makeURLs(t,
 			"https://intake.profile.datadoghq.jp/api/v2/profile",

@@ -88,4 +88,8 @@ var endpoints = []endpoint{
 		Pattern: "/debugger/v1/input",
 		Handler: func(r *HTTPReceiver) http.Handler { return r.debuggerProxyHandler() },
 	},
+	{
+		Pattern: "/v0.1/pipeline_stats",
+		Handler: func(r *HTTPReceiver) http.Handler { return http.HandlerFunc(r.handlePipelineStats) },
+	},
 }

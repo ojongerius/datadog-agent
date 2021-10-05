@@ -25,7 +25,7 @@ import (
 )
 
 // pathStats is the target host API path for delivering stats.
-const pathPipelineStats = "/api/v0.1/pipeline_stats"
+const pathPipelineStats = "/api/v0.2/pipeline_stats"
 
 // PipelineStatsWriter ingests stats buckets and flushes them to the API.
 type PipelineStatsWriter struct {
@@ -93,6 +93,7 @@ func (w *PipelineStatsWriter) Stop() {
 
 // SendPayload sends a stats payload to the Datadog backend.
 func (w *PipelineStatsWriter) SendPayload(p pb.PipelineStatsPayload) {
+	log.Info("sending payload")
 	req := newPayload(map[string]string{
 		headerLanguages:    strings.Join(info.Languages(), "|"),
 		"Content-Type":     "application/msgpack",

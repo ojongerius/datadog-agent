@@ -7,6 +7,7 @@ package agent
 
 import (
 	"context"
+	"github.com/davecgh/go-spew/spew"
 	"runtime"
 	"sync/atomic"
 	"time"
@@ -104,6 +105,7 @@ func (a *Agent) Run() {
 		a.Receiver,
 		a.Concentrator,
 		a.ClientStatsAggregator,
+		a.PipelineStatsAggregator,
 		a.PrioritySampler,
 		a.ErrorsSampler,
 		a.NoPrioritySampler,
@@ -166,6 +168,7 @@ func (a *Agent) loop() {
 			for _, stopper := range []interface{ Stop() }{
 				a.Concentrator,
 				a.ClientStatsAggregator,
+				a.PipelineStatsAggregator,
 				a.TraceWriter,
 				a.StatsWriter,
 				a.PipelineStatsWriter,
@@ -374,6 +377,8 @@ func (a *Agent) ProcessStats(in pb.ClientStatsPayload, lang, tracerVersion strin
 
 // ProcessPipelineStats processes incoming client pipeline stats in from the given tracer.
 func (a *Agent) ProcessPipelineStats(in pb.ClientPipelineStatsPayload, lang, tracerVersion string) {
+	log.Info("received pipeline payload")
+	spew.Dump(in)
 	a.PipelineStatsAggregator.In <- a.processPipelineStats(in, lang, tracerVersion)
 }
 

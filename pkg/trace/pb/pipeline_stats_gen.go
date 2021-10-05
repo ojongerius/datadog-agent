@@ -43,6 +43,12 @@ func (z *ClientGroupedPipelineStats) DecodeMsg(dc *msgp.Reader) (err error) {
 				err = msgp.WrapError(err, "PipelineHash")
 				return
 			}
+		case "ParentHash":
+			z.ParentHash, err = dc.ReadUint64()
+			if err != nil {
+				err = msgp.WrapError(err, "ParentHash")
+				return
+			}
 		case "Summary":
 			z.Summary, err = dc.ReadBytes(z.Summary)
 			if err != nil {
@@ -62,9 +68,9 @@ func (z *ClientGroupedPipelineStats) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *ClientGroupedPipelineStats) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 4
+	// map header, size 5
 	// write "Service"
-	err = en.Append(0x84, 0xa7, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65)
+	err = en.Append(0x85, 0xa7, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65)
 	if err != nil {
 		return
 	}
@@ -93,6 +99,16 @@ func (z *ClientGroupedPipelineStats) EncodeMsg(en *msgp.Writer) (err error) {
 		err = msgp.WrapError(err, "PipelineHash")
 		return
 	}
+	// write "ParentHash"
+	err = en.Append(0xaa, 0x50, 0x61, 0x72, 0x65, 0x6e, 0x74, 0x48, 0x61, 0x73, 0x68)
+	if err != nil {
+		return
+	}
+	err = en.WriteUint64(z.ParentHash)
+	if err != nil {
+		err = msgp.WrapError(err, "ParentHash")
+		return
+	}
 	// write "Summary"
 	err = en.Append(0xa7, 0x53, 0x75, 0x6d, 0x6d, 0x61, 0x72, 0x79)
 	if err != nil {
@@ -109,9 +125,9 @@ func (z *ClientGroupedPipelineStats) EncodeMsg(en *msgp.Writer) (err error) {
 // MarshalMsg implements msgp.Marshaler
 func (z *ClientGroupedPipelineStats) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// map header, size 4
+	// map header, size 5
 	// string "Service"
-	o = append(o, 0x84, 0xa7, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65)
+	o = append(o, 0x85, 0xa7, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65)
 	o = msgp.AppendString(o, z.Service)
 	// string "ReceivingPipelineName"
 	o = append(o, 0xb5, 0x52, 0x65, 0x63, 0x65, 0x69, 0x76, 0x69, 0x6e, 0x67, 0x50, 0x69, 0x70, 0x65, 0x6c, 0x69, 0x6e, 0x65, 0x4e, 0x61, 0x6d, 0x65)
@@ -119,6 +135,9 @@ func (z *ClientGroupedPipelineStats) MarshalMsg(b []byte) (o []byte, err error) 
 	// string "PipelineHash"
 	o = append(o, 0xac, 0x50, 0x69, 0x70, 0x65, 0x6c, 0x69, 0x6e, 0x65, 0x48, 0x61, 0x73, 0x68)
 	o = msgp.AppendUint64(o, z.PipelineHash)
+	// string "ParentHash"
+	o = append(o, 0xaa, 0x50, 0x61, 0x72, 0x65, 0x6e, 0x74, 0x48, 0x61, 0x73, 0x68)
+	o = msgp.AppendUint64(o, z.ParentHash)
 	// string "Summary"
 	o = append(o, 0xa7, 0x53, 0x75, 0x6d, 0x6d, 0x61, 0x72, 0x79)
 	o = msgp.AppendBytes(o, z.Summary)
@@ -161,6 +180,12 @@ func (z *ClientGroupedPipelineStats) UnmarshalMsg(bts []byte) (o []byte, err err
 				err = msgp.WrapError(err, "PipelineHash")
 				return
 			}
+		case "ParentHash":
+			z.ParentHash, bts, err = msgp.ReadUint64Bytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "ParentHash")
+				return
+			}
 		case "Summary":
 			z.Summary, bts, err = msgp.ReadBytesBytes(bts, z.Summary)
 			if err != nil {
@@ -181,7 +206,7 @@ func (z *ClientGroupedPipelineStats) UnmarshalMsg(bts []byte) (o []byte, err err
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *ClientGroupedPipelineStats) Msgsize() (s int) {
-	s = 1 + 8 + msgp.StringPrefixSize + len(z.Service) + 22 + msgp.StringPrefixSize + len(z.ReceivingPipelineName) + 13 + msgp.Uint64Size + 8 + msgp.BytesPrefixSize + len(z.Summary)
+	s = 1 + 8 + msgp.StringPrefixSize + len(z.Service) + 22 + msgp.StringPrefixSize + len(z.ReceivingPipelineName) + 13 + msgp.Uint64Size + 11 + msgp.Uint64Size + 8 + msgp.BytesPrefixSize + len(z.Summary)
 	return
 }
 

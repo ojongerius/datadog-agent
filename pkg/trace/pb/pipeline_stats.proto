@@ -35,5 +35,6 @@ message ClientGroupedPipelineStats {
   string service = 1;
   string receivingPipelineName = 2;
   uint64 pipelineHash = 3;
-  bytes summary = 4; // ddsketch summary of pipeline latencies encoded in protobuf
+  uint64 parentHash = 4;
+  bytes summary = 5; // ddsketch summary of pipeline latencies encoded in protobuf
 }

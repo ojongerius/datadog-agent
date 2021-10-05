@@ -20,6 +20,7 @@ const (
 type pipelineStatsPoint struct {
 	service string
 	receivingPipelineName string
+	parentHash uint64
 	summary *ddsketch.DDSketch
 }
 
@@ -42,30 +43,32 @@ func (b *pipelineBucket) add(bucket pb.ClientPipelineStatsBucket, env, hostname,
 	points, ok := b.pipelineStats[key]
 	if !ok {
 		points = make(map[uint64]pipelineStatsPoint)
+		b.pipelineStats[key] = points
 	}
 	for _, p := range bucket.Stats {
-		var pbSummary *sketchpb.DDSketch
-		err := proto.Unmarshal(p.Summary, pbSummary)
+		var pbSummary sketchpb.DDSketch
+		err := proto.Unmarshal(p.Summary, &pbSummary)
 		if err != nil {
-			log.Error("error decoding sketch: %v.", err)
+			log.Errorf("error decoding sketch: %v.", err)
 			continue
 		}
-		summary, err := ddsketch.FromProto(pbSummary)
+		summary, err := ddsketch.FromProto(&pbSummary)
 		if err != nil {
-			log.Error("error building ddsketch from proto: %v.", err)
+			log.Errorf("error building ddsketch from proto: %v.", err)
 			continue
 		}
 		if point, ok := points[p.PipelineHash]; ok {
 			// todo[piochelepiotr] Add check
 			err := point.summary.MergeWith(summary)
 			if err != nil {
-				log.Error("error merging sketches: %v.", err)
+				log.Errorf("error merging sketches: %v.", err)
 				continue
 			}
 			continue
 		}
 		points[p.PipelineHash] = pipelineStatsPoint{
 			receivingPipelineName: p.ReceivingPipelineName,
+			parentHash: p.ParentHash,
 			service: p.Service,
 			summary: summary,
 		}
@@ -81,13 +84,14 @@ func (b *pipelineBucket) export(start uint64, duration uint64) (p []pb.ClientPip
 		for hash, point := range bucket {
 			summary, err := proto.Marshal(point.summary.ToProto())
 			if err != nil {
-				log.Error("error serializing ddsketch: %v", err)
+				log.Errorf("error serializing ddsketch: %v", err)
 				continue
 			}
 			clientBucket.Stats = append(clientBucket.Stats, pb.ClientGroupedPipelineStats{
 				PipelineHash: hash,
 				Service: point.service,
 				ReceivingPipelineName: point.receivingPipelineName,
+				ParentHash: point.parentHash,
 				Summary: summary,
 			})
 		}
@@ -159,11 +163,12 @@ func (a *PipelineStatsAggregator) Stop() {
 
 // flushOnTime flushes all buckets up to flushTs, except the last one.
 func (a *PipelineStatsAggregator) flushOnTime(now time.Time) {
-	ts := now.UnixNano()
-	duration := bucketDuration.Nanoseconds()
+	ts := now.Unix()
+	duration := int64(bucketDuration.Seconds())
 	for start, b := range a.buckets {
 		if ts > start + duration {
-			a.flush(b.export(uint64(start), uint64(duration)))
+			log.Info("flushing bucket %d", start)
+			a.flush(b.export(uint64(start)*uint64(time.Second), uint64(duration)*uint64(time.Second)))
 			delete(a.buckets, start)
 		}
 	}
@@ -176,7 +181,9 @@ func (a *PipelineStatsAggregator) flushAll() {
 }
 
 func (a *PipelineStatsAggregator) add(p pb.ClientPipelineStatsPayload) {
+	log.Info("calling add")
 	for _, clientBucket := range p.Stats {
+		log.Info("adding bucket %d", clientBucket.Start)
 		clientBucketStart := time.Unix(0, int64(clientBucket.Start)).Truncate(pipelineBucketDuration)
 		ts := clientBucketStart.Unix()
 		b, ok := a.buckets[ts]
@@ -190,6 +197,7 @@ func (a *PipelineStatsAggregator) add(p pb.ClientPipelineStatsPayload) {
 
 func (a *PipelineStatsAggregator) flush(p []pb.ClientPipelineStatsPayload) {
 	if len(p) == 0 {
+		log.Info("nothing to flush")
 		return
 	}
 	a.out <- pb.PipelineStatsPayload{

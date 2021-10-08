@@ -14,10 +14,12 @@ import (
 
 	"github.com/DataDog/datadog-agent/pkg/autodiscovery/integration"
 	"github.com/DataDog/datadog-agent/pkg/collector/check/defaults"
+	"github.com/DataDog/datadog-agent/pkg/util"
 	"github.com/DataDog/datadog-agent/pkg/util/log"
 
 	"github.com/DataDog/datadog-agent/pkg/collector/corechecks/snmp/common"
 	"github.com/DataDog/datadog-agent/pkg/collector/corechecks/snmp/metadata"
+	coreconfig "github.com/DataDog/datadog-agent/pkg/config"
 )
 
 // Using high oid batch size might lead to snmp calls timing out.
@@ -33,8 +35,10 @@ const defaultDiscoveryWorkers = 5
 const defaultDiscoveryAllowedFailures = 3
 const defaultDiscoveryInterval = 3600
 
-// subnetTagPrefix is the prefix used for subnet tag
-const subnetTagPrefix = "autodiscovery_subnet"
+// subnetTagKey is the prefix used for subnet tag
+const subnetTagKey = "autodiscovery_subnet"
+const deviceNamespaceTagKey = "device_namespace"
+const deviceIPTagKey = "snmp_device"
 
 // DefaultBulkMaxRepetitions is the default max rep
 // Using too high max repetitions might lead to tooBig SNMP error messages.
@@ -54,7 +58,9 @@ type InitConfig struct {
 	OidBatchSize          Number           `yaml:"oid_batch_size"`
 	BulkMaxRepetitions    Number           `yaml:"bulk_max_repetitions"`
 	CollectDeviceMetadata Boolean          `yaml:"collect_device_metadata"`
+	UseDeviceIDAsHostname Boolean          `yaml:"use_device_id_as_hostname"`
 	MinCollectionInterval int              `yaml:"min_collection_interval"`
+	Namespace             string           `yaml:"namespace"`
 }
 
 // InstanceConfig is used to deserialize integration instance config
@@ -76,6 +82,7 @@ type InstanceConfig struct {
 	Profile               string            `yaml:"profile"`
 	UseGlobalMetrics      bool              `yaml:"use_global_metrics"`
 	CollectDeviceMetadata *Boolean          `yaml:"collect_device_metadata"`
+	UseDeviceIDAsHostname *Boolean          `yaml:"use_device_id_as_hostname"`
 
 	// ExtraTags is a workaround to pass tags from snmp listener to snmp integration via AD template
 	// (see cmd/agent/dist/conf.d/snmp.d/auto_conf.yaml) that only works with strings.
@@ -104,6 +111,7 @@ type InstanceConfig struct {
 	DiscoveryAllowedFailures int      `yaml:"discovery_allowed_failures"`
 	DiscoveryWorkers         int      `yaml:"discovery_workers"`
 	Workers                  int      `yaml:"workers"`
+	Namespace                string   `yaml:"namespace"`
 }
 
 // CheckConfig holds config needed for an integration instance to run
@@ -132,9 +140,11 @@ type CheckConfig struct {
 	ExtraTags             []string
 	InstanceTags          []string
 	CollectDeviceMetadata bool
+	UseDeviceIDAsHostname bool
 	DeviceID              string
 	DeviceIDTags          []string
 	ResolvedSubnetName    string
+	Namespace             string
 	AutodetectProfile     bool
 	MinCollectionInterval time.Duration
 
@@ -171,7 +181,8 @@ func (c *CheckConfig) RefreshWithProfile(profile string) error {
 
 // UpdateDeviceIDAndTags updates DeviceID and DeviceIDTags
 func (c *CheckConfig) UpdateDeviceIDAndTags() {
-	c.DeviceID, c.DeviceIDTags = buildDeviceID(c.getDeviceIDTags())
+	c.DeviceIDTags = util.SortUniqInPlace(c.getDeviceIDTags())
+	c.DeviceID = c.Namespace + ":" + c.IPAddress
 }
 
 func (c *CheckConfig) addUptimeMetric() {
@@ -180,12 +191,11 @@ func (c *CheckConfig) addUptimeMetric() {
 }
 
 // GetStaticTags return static tags built from configuration
-// warning: changing GetStaticTags logic might lead to different deviceID
-// GetStaticTags does not contain tags from instance[].tags config
 func (c *CheckConfig) GetStaticTags() []string {
 	tags := common.CopyStrings(c.ExtraTags)
+	tags = append(tags, deviceNamespaceTagKey+":"+c.Namespace)
 	if c.IPAddress != "" {
-		tags = append(tags, "snmp_device:"+c.IPAddress)
+		tags = append(tags, deviceIPTagKey+":"+c.IPAddress)
 	}
 	return tags
 }
@@ -196,7 +206,7 @@ func (c *CheckConfig) GetStaticTags() []string {
 func (c *CheckConfig) GetNetworkTags() []string {
 	var tags []string
 	if c.Network != "" {
-		tags = append(tags, subnetTagPrefix+":"+c.Network)
+		tags = append(tags, subnetTagKey+":"+c.Network)
 	}
 	return tags
 }
@@ -204,8 +214,7 @@ func (c *CheckConfig) GetNetworkTags() []string {
 // getDeviceIDTags return sorted tags used for generating device id
 // warning: changing getDeviceIDTags logic might lead to different deviceID
 func (c *CheckConfig) getDeviceIDTags() []string {
-	tags := c.GetStaticTags()
-	tags = append(tags, c.InstanceTags...)
+	tags := []string{deviceNamespaceTagKey + ":" + c.Namespace, deviceIPTagKey + ":" + c.IPAddress}
 	sort.Strings(tags)
 	return tags
 }
@@ -273,6 +282,12 @@ func NewCheckConfig(rawInstance integration.Data, rawInitConfig integration.Data
 		c.CollectDeviceMetadata = bool(*instance.CollectDeviceMetadata)
 	} else {
 		c.CollectDeviceMetadata = bool(initConfig.CollectDeviceMetadata)
+	}
+
+	if instance.UseDeviceIDAsHostname != nil {
+		c.UseDeviceIDAsHostname = bool(*instance.UseDeviceIDAsHostname)
+	} else {
+		c.UseDeviceIDAsHostname = bool(initConfig.UseDeviceIDAsHostname)
 	}
 
 	if instance.ExtraTags != "" {
@@ -368,6 +383,19 @@ func NewCheckConfig(rawInstance integration.Data, rawInitConfig integration.Data
 		return nil, fmt.Errorf("bulk max repetition must be a positive integer. Invalid value: %d", bulkMaxRepetitions)
 	}
 	c.BulkMaxRepetitions = uint32(bulkMaxRepetitions)
+
+	if instance.Namespace != "" {
+		c.Namespace = instance.Namespace
+	} else if initConfig.Namespace != "" {
+		c.Namespace = initConfig.Namespace
+	} else {
+		c.Namespace = coreconfig.Datadog.GetString("network_devices.namespace")
+	}
+
+	if c.Namespace == "" {
+		// Can only happen if snmp_listener.namespace config is set to empty string in `datadog.yaml`
+		return nil, fmt.Errorf("namespace cannot be empty")
+	}
 
 	// metrics Configs
 	if instance.UseGlobalMetrics {
@@ -524,10 +552,12 @@ func (c *CheckConfig) Copy() *CheckConfig {
 	newConfig.ExtraTags = common.CopyStrings(c.ExtraTags)
 	newConfig.InstanceTags = common.CopyStrings(c.InstanceTags)
 	newConfig.CollectDeviceMetadata = c.CollectDeviceMetadata
+	newConfig.UseDeviceIDAsHostname = c.UseDeviceIDAsHostname
 	newConfig.DeviceID = c.DeviceID
 
 	newConfig.DeviceIDTags = common.CopyStrings(c.DeviceIDTags)
 	newConfig.ResolvedSubnetName = c.ResolvedSubnetName
+	newConfig.Namespace = c.Namespace
 	newConfig.AutodetectProfile = c.AutodetectProfile
 	newConfig.MinCollectionInterval = c.MinCollectionInterval
 
@@ -610,7 +640,7 @@ func getSubnetFromTags(tags []string) (string, error) {
 	for _, tag := range tags {
 		// `autodiscovery_subnet` is set as tags in AD Template
 		// e.g. cmd/agent/dist/conf.d/snmp.d/auto_conf.yaml
-		prefix := subnetTagPrefix + ":"
+		prefix := subnetTagKey + ":"
 		if strings.HasPrefix(tag, prefix) {
 			return tag[len(prefix):], nil
 		}

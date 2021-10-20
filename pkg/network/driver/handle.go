@@ -43,10 +43,11 @@ const (
 	// StatsHandle has no filter set and is used to pull total stats from the driver
 	StatsHandle HandleType = "Stats"
 )
+
 // HandleTypeToPathName maps the handle type to the path name that the driver is expecting.
 var HandleTypeToPathName = map[HandleType]string{
-	FlowHandle : "flowstats",
-	DataHandle : "transporthandle",
+	FlowHandle:  "flowstats",
+	DataHandle:  "transporthandle",
 	StatsHandle: "flowstats", // for now just use that; any path will do
 }
 

@@ -9,6 +9,10 @@ security_go_generate_check:
     - !reference [.retrieve_linux_go_deps]
     - pip3 install -r docs/cloud-workload-security/scripts/requirements-docs.txt
   script:
+    - apt-get update
+    - apt-get install -y protobuf-compiler
+    - inv -e install-tools
+    - export PATH=$PATH:$GOPATH/bin
     - go generate ./pkg/security/...
     - inv -e security-agent.generate-documentation
     - git status --porcelain

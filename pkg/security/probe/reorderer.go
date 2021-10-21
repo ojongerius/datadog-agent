@@ -9,6 +9,7 @@ package probe
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -141,6 +142,8 @@ func (h *reOrdererHeap) dequeue(handler func(cpu uint64, data []byte), generatio
 		h.heap = h.heap[0:i]
 
 		metric.TotalOp++
+
+		metric.TotalHandled++
 		handler(node.cpu, node.data)
 
 		h.pool.free(node)
@@ -163,22 +166,35 @@ func (r *ReOrdererMetric) zero() {
 
 // ReOrdererMetric holds reordering metrics
 type ReOrdererMetric struct {
-	TotalOp    uint64
-	TotalDepth uint64
-	QueueSize  uint64
+	TotalOp       uint64
+	TotalDepth    uint64
+	QueueSize     uint64
+	TotalEnqueued uint64
+	TotalHandled  uint64
+	ExtractErrors uint64
+}
+
+func (r ReOrdererMetric) String() string {
+	var avgDepth uint64
+	if r.TotalOp > 0 {
+		avgDepth = r.TotalDepth / r.TotalOp
+	}
+
+	return fmt.Sprintf("TotalOp: %d, TotalDepth: %d, AvgDepth: %d, Size: %d, Enqueued: %d, Handled: %d, Errors: %d", r.TotalOp, r.TotalDepth, avgDepth, r.QueueSize, r.TotalEnqueued, r.TotalHandled, r.ExtractErrors)
 }
 
 // ReOrderer defines an event re-orderer
 type ReOrderer struct {
-	ctx         context.Context
-	queue       chan []byte
-	handler     func(cpu uint64, data []byte)
-	heap        *reOrdererHeap
-	extractInfo func(data []byte) (uint64, uint64, error) // cpu, timestamp
-	opts        ReOrdererOpts
-	metric      ReOrdererMetric
-	Metrics     chan ReOrdererMetric
-	generation  uint64
+	ctx           context.Context
+	queue         chan []byte
+	handler       func(cpu uint64, data []byte)
+	heap          *reOrdererHeap
+	extractInfo   func(data []byte) (uint64, uint64, error) // cpu, timestamp
+	opts          ReOrdererOpts
+	metric        ReOrdererMetric
+	Metrics       chan ReOrdererMetric
+	generation    uint64
+	metricRequest chan chan ReOrdererMetric
 }
 
 // Start event handler loop
@@ -197,9 +213,11 @@ func (r *ReOrderer) Start(wg *sync.WaitGroup) {
 	for {
 		select {
 		case data := <-r.queue:
+			r.metric.TotalEnqueued++
 			if len(data) > 0 {
-				if cpu, tm, err = r.extractInfo(data); err != nil {
-					continue
+				if cpu, tm, _ = r.extractInfo(data); err != nil {
+					r.metric.ExtractErrors++
+					tm = lastTm
 				}
 			} else {
 				tm = lastTm
@@ -212,7 +230,6 @@ func (r *ReOrderer) Start(wg *sync.WaitGroup) {
 
 			r.heap.enqueue(cpu, data, tm, r.generation, &r.metric)
 			r.heap.dequeue(r.handler, r.generation-r.opts.Retention, &r.metric)
-
 		case <-flushTicker.C:
 			r.generation++
 
@@ -227,9 +244,20 @@ func (r *ReOrderer) Start(wg *sync.WaitGroup) {
 			}
 
 			r.metric.zero()
+		case ch := <-r.metricRequest:
+			ch <- r.metric
 		case <-r.ctx.Done():
 			return
 		}
+	}
+}
+
+// HandleEvent handle event form perf ring
+func (r *ReOrderer) GetMetric(ch chan ReOrdererMetric) {
+	select {
+	case r.metricRequest <- ch:
+	default:
+		ch <- ReOrdererMetric{}
 	}
 }
 
@@ -252,9 +280,10 @@ func NewReOrderer(ctx context.Context, handler func(cpu uint64, data []byte), ex
 		heap: &reOrdererHeap{
 			pool: &reOrdererNodePool{},
 		},
-		extractInfo: extractInfo,
-		opts:        opts,
-		Metrics:     make(chan ReOrdererMetric, 100000),
-		generation:  opts.Retention * 2, // start with retention to avoid direct dequeue at start
+		extractInfo:   extractInfo,
+		opts:          opts,
+		Metrics:       make(chan ReOrdererMetric, 100000),
+		generation:    opts.Retention * 2, // start with retention to avoid direct dequeue at start
+		metricRequest: make(chan chan ReOrdererMetric),
 	}
 }

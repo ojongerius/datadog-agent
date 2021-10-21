@@ -574,6 +574,11 @@ func (tm *testModule) GetSignal(tb testing.TB, action func() error, cb ruleHandl
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	defer func() {
+		time.Sleep(500 * time.Millisecond)
+		tb.Logf("Reorderer metrics: %s", tm.probe.GetReordererMetric())
+	}()
+
 	tm.RegisterRuleEventHandler(func(e *sprobe.Event, r *rules.Rule) {
 		tb.Helper()
 		cb(e, r)

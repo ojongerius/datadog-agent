@@ -77,6 +77,13 @@ type Probe struct {
 	inodeDiscardersCounters map[model.EventType]*int64
 }
 
+// GetLastReordererMetric return last reordered metric
+func (p *Probe) GetReordererMetric() ReOrdererMetric {
+	ch := make(chan ReOrdererMetric, 10)
+	p.reOrderer.GetMetric(ch)
+	return <-ch
+}
+
 // GetResolvers returns the resolvers of Probe
 func (p *Probe) GetResolvers() *Resolvers {
 	return p.resolvers

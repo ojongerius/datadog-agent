@@ -4,10 +4,11 @@ package driver
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/assert"
-	"golang.org/x/sys/windows"
 	"testing"
 	"unsafe"
+
+	"github.com/stretchr/testify/assert"
+	"golang.org/x/sys/windows"
 )
 
 func dnsSupported(t *testing.T) bool {
@@ -19,7 +20,7 @@ func httpSupported(t *testing.T) bool {
 }
 
 func TestDriverRequiresPath(t *testing.T) {
-	p, err := windows.UTF16PtrFromString(DeviceName)
+	p, err := windows.UTF16PtrFromString(deviceName)
 	assert.Nil(t, err)
 	h, err := windows.CreateFile(p,
 		windows.GENERIC_READ|windows.GENERIC_WRITE,
@@ -35,8 +36,8 @@ func TestDriverRequiresPath(t *testing.T) {
 }
 
 func TestDriverCanOpenExpectedPaths(t *testing.T) {
-	for _, pathext := range HandleTypeToPathName {
-		fullpath := DeviceName + `\` + pathext
+	for _, pathext := range handleTypeToPathName {
+		fullpath := deviceName + `\` + pathext
 		p, err := windows.UTF16PtrFromString(fullpath)
 		assert.Nil(t, err)
 		h, err := windows.CreateFile(p,
@@ -54,11 +55,11 @@ func TestDriverCanOpenExpectedPaths(t *testing.T) {
 }
 
 func createHandleForHandleType(t HandleType) (windows.Handle, error) {
-	pathext, ok := HandleTypeToPathName[t]
+	pathext, ok := handleTypeToPathName[t]
 	if !ok {
 		return 0, fmt.Errorf("Unknown Handle type %v", t)
 	}
-	fullpath := DeviceName + `\` + pathext
+	fullpath := deviceName + `\` + pathext
 	p, err := windows.UTF16PtrFromString(fullpath)
 	if err != nil {
 		return 0, err

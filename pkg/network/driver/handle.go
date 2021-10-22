@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	// DeviceName identifies the name and location of the windows driver
-	DeviceName = `\\.\ddnpm`
+	// deviceName identifies the name and location of the windows driver
+	deviceName = `\\.\ddnpm`
 )
 
 var (
@@ -44,8 +44,8 @@ const (
 	StatsHandle HandleType = "Stats"
 )
 
-// HandleTypeToPathName maps the handle type to the path name that the driver is expecting.
-var HandleTypeToPathName = map[HandleType]string{
+// handleTypeToPathName maps the handle type to the path name that the driver is expecting.
+var handleTypeToPathName = map[HandleType]string{
 	FlowHandle:  "flowstats",
 	DataHandle:  "transporthandle",
 	StatsHandle: "flowstats", // for now just use that; any path will do
@@ -62,11 +62,11 @@ type Handle struct {
 
 // NewHandle creates a new windows handle attached to the driver
 func NewHandle(flags uint32, handleType HandleType) (*Handle, error) {
-	pathext, ok := HandleTypeToPathName[handleType]
+	pathext, ok := handleTypeToPathName[handleType]
 	if !ok {
 		return nil, fmt.Errorf("Unknown Handle type %v", handleType)
 	}
-	fullpath := DeviceName + `\` + pathext
+	fullpath := deviceName + `\` + pathext
 	p, err := windows.UTF16PtrFromString(fullpath)
 	if err != nil {
 		return nil, err

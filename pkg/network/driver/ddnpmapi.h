@@ -54,6 +54,11 @@ typedef unsigned char       uint8_t;
                                               METHOD_BUFFERED,\
                                               FILE_ANY_ACCESS)
 
+#define DDNPMDRIVER_IOCTL_SET_HTTP_FILTER CTL_CODE(FILE_DEVICE_NETWORK, \
+                                              0x807, \
+                                              METHOD_BUFFERED,\
+                                              FILE_ANY_ACCESS)
+
 #pragma pack(1)
 
 /*!
@@ -87,7 +92,7 @@ typedef struct _flow_handle_stats {
     volatile LONG64         num_flow_collisions;
 
     // num_flow_structures and peak_num_flow_structures valid only on per-handle stats;
-    // will not be kept for global stats.
+    // will not be kept for global stats.  
     volatile LONG64         num_flow_structures;      // total number of flow structures
     volatile LONG64         peak_num_flow_structures; // high water mark of numFlowStructures
 
@@ -134,7 +139,7 @@ typedef struct _filterAddress
     uint8_t                   v4_address[4];    // address in network byte order, so v4_address[0] = top network tuple
     uint8_t                   v4_padding[4];    // pad out to 64 bit boundary
     uint8_t                   v6_address[16];
-    uint64_t                  mask; // number of mask bits.
+    uint64_t                  mask; // number of mask bits.  
 } FILTER_ADDRESS;
 
 #define     DIRECTION_INBOUND    ((uint64_t)0)

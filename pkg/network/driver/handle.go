@@ -46,9 +46,9 @@ const (
 
 // handleTypeToPathName maps the handle type to the path name that the driver is expecting.
 var handleTypeToPathName = map[HandleType]string{
-	FlowHandle:  "flowstats",
+	FlowHandle:  "flowstatshandle",
 	DataHandle:  "transporthandle",
-	StatsHandle: "flowstats", // for now just use that; any path will do
+	StatsHandle: "driverstatshandle", // for now just use that; any path will do
 }
 
 // Handle struct stores the windows handle for the driver as well as information about what type of filter is set

@@ -102,7 +102,7 @@ func TestDriverWillAcceptFilters(t *testing.T) {
 			uint32(unsafe.Sizeof(id)), nil, nil)
 		assert.Nil(t, err)
 	})
-	t.Run("Test flow handle will accept transport filter", func(t *testing.T) {
+	t.Run("Test flow handle will not accept transport filter", func(t *testing.T) {
 		var id int64
 		h, err := createHandleForHandleType(DataHandle)
 		if err == nil {

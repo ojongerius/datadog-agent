@@ -16,7 +16,7 @@ typedef __int64 LONG64;
 typedef unsigned char       uint8_t;
 
 // define a version signature so that the driver won't load out of date structures, etc.
-#define DD_NPMDRIVER_VERSION       0x0b
+#define DD_NPMDRIVER_VERSION       0x0c
 #define DD_NPMDRIVER_SIGNATURE     ((uint64_t)0xDDFD << 32 | DD_NPMDRIVER_VERSION)
 
 // for more information on defining control codes, see
@@ -77,7 +77,6 @@ typedef struct _handle_stats {
     volatile LONG64       write_bytes;
 
     volatile LONG64		  ioctl_calls;	//! number of ioctl calls to the driver
-
 } HANDLE_STATS;
 
 typedef struct _flow_handle_stats {
@@ -95,8 +94,13 @@ typedef struct _flow_handle_stats {
     // will not be kept for global stats.  
     volatile LONG64         num_flow_structures;      // total number of flow structures
     volatile LONG64         peak_num_flow_structures; // high water mark of numFlowStructures
-
     volatile LONG64         num_flows_missed_max_exceeded;
+
+    // same for no_handle flows
+    volatile LONG64         num_flows_no_handle;
+    volatile LONG64         peak_num_flows_no_handle;
+    volatile LONG64         num_flows_missed_max_no_handle_exceeded;
+
 } FLOW_STATS;
 
 typedef struct _transport_handle_stats {

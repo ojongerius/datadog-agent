@@ -3,20 +3,24 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-present Datadog, Inc.
 
-package util
+package cloudproviders
 
 import (
 	"context"
 
+	"github.com/DataDog/datadog-agent/pkg/config"
 	"github.com/DataDog/datadog-agent/pkg/metadata/inventories"
-	"github.com/DataDog/datadog-agent/pkg/util/alibaba"
-	"github.com/DataDog/datadog-agent/pkg/util/azure"
+	"github.com/DataDog/datadog-agent/pkg/util"
+	"github.com/DataDog/datadog-agent/pkg/util/cloudfoundry"
+	"github.com/DataDog/datadog-agent/pkg/util/cloudproviders/alibaba"
+	"github.com/DataDog/datadog-agent/pkg/util/cloudproviders/azure"
+	"github.com/DataDog/datadog-agent/pkg/util/cloudproviders/tencent"
 	"github.com/DataDog/datadog-agent/pkg/util/ec2"
 	"github.com/DataDog/datadog-agent/pkg/util/ecs"
 	ecscommon "github.com/DataDog/datadog-agent/pkg/util/ecs/common"
 	"github.com/DataDog/datadog-agent/pkg/util/gce"
+	"github.com/DataDog/datadog-agent/pkg/util/hostname/kubelet"
 	"github.com/DataDog/datadog-agent/pkg/util/log"
-	"github.com/DataDog/datadog-agent/pkg/util/tencent"
 )
 
 type cloudProviderDetector struct {
@@ -75,4 +79,60 @@ func GetCloudProviderNTPHosts(ctx context.Context) []string {
 	}
 
 	return nil
+}
+
+// GetHostAliases returns the hostname aliases from different provider
+// This should include:
+// * Alibaba
+// * Azure
+// * GCE
+// * cloudfoundry
+// * kubernetes
+// * Tencent
+func GetHostAliases(ctx context.Context) []string {
+	aliases := config.GetValidHostAliases()
+
+	alibabaAlias, err := alibaba.GetHostAlias(ctx)
+	if err != nil {
+		log.Debugf("no Alibaba Host Alias: %s", err)
+	} else if alibabaAlias != "" {
+		aliases = append(aliases, alibabaAlias)
+	}
+
+	azureAlias, err := azure.GetHostAlias(ctx)
+	if err != nil {
+		log.Debugf("no Azure Host Alias: %s", err)
+	} else if azureAlias != "" {
+		aliases = append(aliases, azureAlias)
+	}
+
+	gceAliases, err := gce.GetHostAliases(ctx)
+	if err != nil {
+		log.Debugf("no GCE Host Alias: %s", err)
+	} else {
+		aliases = append(aliases, gceAliases...)
+	}
+
+	cfAliases, err := cloudfoundry.GetHostAliases(ctx)
+	if err != nil {
+		log.Debugf("no Cloud Foundry Host Alias: %s", err)
+	} else if cfAliases != nil {
+		aliases = append(aliases, cfAliases...)
+	}
+
+	k8sAlias, err := kubelet.GetHostAlias(ctx)
+	if err != nil {
+		log.Debugf("no Kubernetes Host Alias (through kubelet API): %s", err)
+	} else if k8sAlias != "" {
+		aliases = append(aliases, k8sAlias)
+	}
+
+	tencentAlias, err := tencent.GetHostAlias(ctx)
+	if err != nil {
+		log.Debugf("no Tencent Host Alias: %s", err)
+	} else if tencentAlias != "" {
+		aliases = append(aliases, tencentAlias)
+	}
+
+	return util.SortUniqInPlace(aliases)
 }

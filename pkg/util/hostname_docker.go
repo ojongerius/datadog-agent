@@ -14,41 +14,33 @@ import (
 
 	"github.com/DataDog/datadog-agent/pkg/config"
 	"github.com/DataDog/datadog-agent/pkg/util/hostname"
-	"github.com/DataDog/datadog-agent/pkg/util/hostname/validate"
 	"github.com/DataDog/datadog-agent/pkg/util/log"
 )
 
 func getContainerHostname(ctx context.Context) string {
+	var err error
 	if config.IsFeaturePresent(config.Kubernetes) {
 		// Cluster-agent logic: Kube apiserver
-		if getKubeHostname, found := hostname.ProviderCatalog["kube_apiserver"]; found {
-			log.Debug("GetHostname trying Kubernetes trough API server...")
-			name, err := getKubeHostname(ctx, nil)
-			if err == nil && validate.ValidHostname(name) == nil {
-				return name
-			}
+		if name, err := hostname.GetHostname(ctx, "kube_apiserver", nil); err == nil {
+			return name
 		}
+		log.Debug(err.Error())
 	}
 
 	// Node-agent logic: docker or kubelet
 	if config.IsFeaturePresent(config.Docker) {
 		log.Debug("GetHostname trying Docker API...")
-		if getDockerHostname, found := hostname.ProviderCatalog["docker"]; found {
-			name, err := getDockerHostname(ctx, nil)
-			if err == nil && validate.ValidHostname(name) == nil {
-				return name
-			}
+		if name, err := hostname.GetHostname(ctx, "docker", nil); err == nil {
+			return name
 		}
+		log.Debug(err.Error())
 	}
 
 	if config.IsFeaturePresent(config.Kubernetes) {
-		if getKubeletHostname, found := hostname.ProviderCatalog["kubelet"]; found {
-			log.Debug("GetHostname trying Kubernetes trough kubelet API...")
-			name, err := getKubeletHostname(ctx, nil)
-			if err == nil && validate.ValidHostname(name) == nil {
-				return name
-			}
+		if name, err := hostname.GetHostname(ctx, "kubelet", nil); err == nil {
+			return name
 		}
+		log.Debug(err.Error())
 	}
 
 	return ""

@@ -288,6 +288,7 @@ api_key:
 ## "azure"   Azure
 ## "alibaba" Alibaba
 ## "tencent" Tencent
+## "oracle"  Oracle Cloud
 #
 # cloud_provider_metadata:
 #   - "aws"

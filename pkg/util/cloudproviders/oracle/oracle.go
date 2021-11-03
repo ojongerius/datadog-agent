@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-present Datadog, Inc.
 
-package alibaba
+package oracle
 
 import (
 	"context"
@@ -17,14 +17,14 @@ import (
 
 // declare these as vars not const to ease testing
 var (
-	metadataURL = "http://100.100.100.200"
+	metadataURL = " http://169.254.169.254"
 	timeout     = 300 * time.Millisecond
 
 	// CloudProviderName contains the inventory name of for EC2
-	CloudProviderName = "Alibaba"
+	CloudProviderName = "Oracle"
 )
 
-// IsRunningOn returns true if the agent is running on Alibaba
+// IsRunningOn returns true if the agent is running on Oracle
 func IsRunningOn(ctx context.Context) bool {
 	if _, err := GetHostAliases(ctx); err == nil {
 		return true
@@ -33,18 +33,22 @@ func IsRunningOn(ctx context.Context) bool {
 }
 
 var instanceIDFetcher = cachedfetch.Fetcher{
-	Name: "Alibaba InstanceID",
+	Name: "Oracle InstanceID",
 	Attempt: func(ctx context.Context) (interface{}, error) {
-
 		if !config.IsCloudProviderEnabled(CloudProviderName) {
-			return nil, fmt.Errorf("cloud provider is disabled by configuration")
+			return "", fmt.Errorf("cloud provider is disabled by configuration")
 		}
 
-		endpoint := metadataURL + "/latest/meta-data/instance-id"
-		res, err := httputils.Get(ctx, endpoint, nil, timeout)
+		endpoint := metadataURL + "/opc/v2/instance/id"
+		res, err := httputils.Get(ctx, endpoint, map[string]string{"Authorization": "Bearer Oracle"}, timeout)
 		if err != nil {
-			return nil, fmt.Errorf("Alibaba HostAliases: unable to query metadata endpoint: %s", err)
+			return nil, fmt.Errorf("Oracle HostAliases: unable to query metadata endpoint: %s", err)
 		}
+
+		if res == "" {
+			return nil, fmt.Errorf("Oracle '%s' returned empty id", endpoint)
+		}
+
 		maxLength := config.Datadog.GetInt("metadata_endpoints_max_hostname_size")
 		if len(res) > maxLength {
 			return nil, fmt.Errorf("%v gave a response with length > to %v", endpoint, maxLength)
@@ -53,21 +57,16 @@ var instanceIDFetcher = cachedfetch.Fetcher{
 	},
 }
 
-// GetHostAliases returns the VM ID from the Alibaba Metadata api
+// GetHostAliases returns the VM ID from the Oracle Metadata api
 func GetHostAliases(ctx context.Context) ([]string, error) {
 	return instanceIDFetcher.FetchStringSlice(ctx)
 }
 
-// GetNTPHosts returns the NTP hosts for Alibaba if it is detected as the cloud provider, otherwise an empty array.
-// These are their public NTP servers, as Alibaba uses two different types of private/internal networks for their cloud
-// machines and we can't be sure those servers are always accessible for every customer on every network type.
-// Docs: https://www.alibabacloud.com/help/doc-detail/92704.htm
+// GetNTPHosts returns the NTP hosts for Oracle if it is detected as the cloud provider, otherwise an nil array.
+// Docs: https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/configuringntpservice.htm
 func GetNTPHosts(ctx context.Context) []string {
 	if IsRunningOn(ctx) {
-		return []string{
-			"ntp.aliyun.com", "ntp1.aliyun.com", "ntp2.aliyun.com", "ntp3.aliyun.com",
-			"ntp4.aliyun.com", "ntp5.aliyun.com", "ntp6.aliyun.com", "ntp7.aliyun.com",
-		}
+		return []string{"169.254.169.254"}
 	}
 
 	return nil

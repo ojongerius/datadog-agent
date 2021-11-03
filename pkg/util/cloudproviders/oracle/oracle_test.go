@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-present Datadog, Inc.
 
-package tencent
+package oracle
 
 import (
 	"context"
@@ -17,67 +17,49 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGetInstanceID(t *testing.T) {
-	ctx := context.Background()
-	holdValue := config.Datadog.Get("cloud_provider_metadata")
-	defer config.Datadog.Set("cloud_provider_metadata", holdValue)
-	config.Datadog.Set("cloud_provider_metadata", []string{"tencent"})
-
-	expected := "ins-nad6bga0"
-	var lastRequest *http.Request
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		io.WriteString(w, expected)
-		lastRequest = r
-	}))
-	defer ts.Close()
-	metadataURL = ts.URL
-
-	val, err := GetInstanceID(ctx)
-	assert.Nil(t, err)
-	assert.Equal(t, expected, val)
-	assert.Equal(t, lastRequest.URL.Path, "/meta-data/instance-id")
-}
-
 func TestGetHostAliases(t *testing.T) {
-	ctx := context.Background()
 	holdValue := config.Datadog.Get("cloud_provider_metadata")
 	defer config.Datadog.Set("cloud_provider_metadata", holdValue)
-	config.Datadog.Set("cloud_provider_metadata", []string{"tencent"})
+	config.Datadog.Set("cloud_provider_metadata", []string{"oracle"})
 
-	expected := "ins-nad6bga0"
+	ctx := context.Background()
+	expected := "ocid1.instance.oc1.iad.anuwcljte6cuweqcz7sarpn43hst2kaaaxbbbccbaaa6vpd66tvcyhgiifsq"
 	var lastRequest *http.Request
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("Content-Type", "application/octet-stream")
 		io.WriteString(w, expected)
 		lastRequest = r
 	}))
 	defer ts.Close()
+
+	defer func(url string) { metadataURL = url }(metadataURL)
 	metadataURL = ts.URL
 
 	aliases, err := GetHostAliases(ctx)
-	assert.NoError(t, err)
+	assert.Nil(t, err)
 	require.Len(t, aliases, 1)
 	assert.Equal(t, expected, aliases[0])
-	assert.Equal(t, lastRequest.URL.Path, "/meta-data/instance-id")
+	assert.Equal(t, lastRequest.URL.Path, "/opc/v2/instance/id")
+	assert.Equal(t, lastRequest.Header.Get("Authorization"), "Bearer Oracle")
 }
 
 func TestGetNTPHosts(t *testing.T) {
 	holdValue := config.Datadog.Get("cloud_provider_metadata")
 	defer config.Datadog.Set("cloud_provider_metadata", holdValue)
-	config.Datadog.Set("cloud_provider_metadata", []string{"tencent"})
+	config.Datadog.Set("cloud_provider_metadata", []string{"oracle"})
 
 	ctx := context.Background()
-	expectedHosts := []string{"ntpupdate.tencentyun.com"}
+	expectedHosts := []string{"169.254.169.254"}
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("Content-Type", "application/octet-stream")
 		io.WriteString(w, "test")
 	}))
 	defer ts.Close()
 
+	defer func(url string) { metadataURL = url }(metadataURL)
 	metadataURL = ts.URL
-	actualHosts := GetNTPHosts(ctx)
 
+	actualHosts := GetNTPHosts(ctx)
 	assert.Equal(t, expectedHosts, actualHosts)
 }

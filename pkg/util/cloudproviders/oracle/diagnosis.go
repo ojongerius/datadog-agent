@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-present Datadog, Inc.
 
-package azure
+package oracle
 
 import (
 	"context"
@@ -12,10 +12,10 @@ import (
 )
 
 func init() {
-	diagnosis.Register("Azure Metadata availability", diagnose)
+	diagnosis.Register("OracleCloud Metadata availability", diagnose)
 }
 
-// diagnose the azure metadata API availability
+// diagnose the oraclecloud metadata API availability
 func diagnose() error {
 	_, err := GetHostAliases(context.TODO())
 	return err

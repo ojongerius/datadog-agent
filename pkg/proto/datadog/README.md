@@ -21,12 +21,13 @@ elsewhere take precedence (`which` is your friend).
 
 ### Code Generation
 
-Chdir yourself into this directory (`cmd/agent/api/pb`), and run
+Chdir yourself into this directory (`pkg/proto`), and run
 the following commands:
 
 ```
-protoc -I. --go_out=plugins=grpc,paths=source_relative:. api.proto
-protoc -I. --grpc-gateway_out=logtostderr=true,paths=source_relative:. api.proto
+protoc -I. --go_out=plugins=grpc,paths=source_relative:pbgo datadog/api/v1/api.proto
+protoc -I. --go_out=plugins=grpc,paths=source_relative:pbgo datadog/config/config.proto
+protoc -I. --grpc-gateway_out=logtostderr=true,paths=source_relative:pbgo datadog/api/v1/api.proto
 ```
 
 Those two will generate the protobuf golang definitions _and_ the

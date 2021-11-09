@@ -22,7 +22,6 @@ import (
 
 	"github.com/DataDog/datadog-agent/pkg/trace/api/apiutil"
 	"github.com/DataDog/datadog-agent/pkg/trace/config"
-	"github.com/DataDog/datadog-agent/pkg/trace/config/features"
 	"github.com/DataDog/datadog-agent/pkg/trace/info"
 	"github.com/DataDog/datadog-agent/pkg/trace/metrics"
 	"github.com/DataDog/datadog-agent/pkg/trace/metrics/timing"
@@ -78,7 +77,7 @@ func (o *OTLPReceiver) Start() {
 				}
 			}
 		}()
-		log.Infof("OpenTelemetry HTTP receiver running on http://%s:%d", o.cfg.BindHost, o.cfg.HTTPPort)
+		log.Debugf("OpenTelemetry HTTP receiver running on http://%s:%d (internal use only)", o.cfg.BindHost, o.cfg.HTTPPort)
 	}
 	if o.cfg.GRPCPort != 0 {
 		ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", o.cfg.BindHost, o.cfg.GRPCPort))
@@ -94,7 +93,7 @@ func (o *OTLPReceiver) Start() {
 					log.Criticalf("Error starting OpenTelemetry gRPC server: %v", err)
 				}
 			}()
-			log.Infof("OpenTelemetry gRPC receiver running on %s:%d", o.cfg.BindHost, o.cfg.GRPCPort)
+			log.Debugf("OpenTelemetry gRPC receiver running on %s:%d (internal use only)", o.cfg.BindHost, o.cfg.GRPCPort)
 		}
 	}
 }
@@ -327,12 +326,7 @@ func convertSpan(rattr map[string]string, lib *otlppb.InstrumentationLibrary, in
 			sampler.KeySamplingPriority: float64(sampler.PriorityAutoKeep),
 		},
 	}
-	if features.Has("otlp_original_ids") {
-		// keep original IDs
-		span.Meta["otlp_ids.trace"] = hex.EncodeToString(in.TraceId)
-		span.Meta["otlp_ids.span"] = hex.EncodeToString(in.SpanId)
-		span.Meta["otlp_ids.parent"] = hex.EncodeToString(in.ParentSpanId)
-	}
+	span.Meta["otlp.trace_id"] = hex.EncodeToString(in.TraceId)
 	if _, ok := span.Meta["version"]; !ok {
 		if ver := rattr[string(semconv.AttributeServiceVersion)]; ver != "" {
 			span.Meta["version"] = ver

@@ -34,6 +34,8 @@ const (
 	KubeOrchestratorExplorer Feature = "orchestratorexplorer"
 	// CloudFoundry socket present
 	CloudFoundry Feature = "cloudfoundry"
+	// Podman containers storage path accessible
+	Podman Feature = "podman"
 
 	defaultLinuxDockerSocket           = "/var/run/docker.sock"
 	defaultWindowsDockerSocketPath     = "//./pipe/docker_engine"
@@ -41,6 +43,7 @@ const (
 	defaultWindowsContainerdSocketPath = "//./pipe/containerd-containerd"
 	defaultLinuxCrioSocket             = "/var/run/crio/crio.sock"
 	defaultHostMountPrefix             = "/host"
+	defaultPodmanContainersStoragePath = "/var/lib/containers"
 	unixSocketPrefix                   = "unix://"
 	winNamedPipePrefix                 = "npipe://"
 
@@ -56,6 +59,7 @@ func init() {
 	registerFeature(EKSFargate)
 	registerFeature(KubeOrchestratorExplorer)
 	registerFeature(CloudFoundry)
+	registerFeature(Podman)
 }
 
 func detectContainerFeatures(features FeatureMap) {
@@ -64,6 +68,7 @@ func detectContainerFeatures(features FeatureMap) {
 	detectContainerd(features)
 	detectFargate(features)
 	detectCloudFoundry(features)
+	detectPodman(features)
 }
 
 func detectKubernetes(features FeatureMap) {
@@ -154,6 +159,12 @@ func detectFargate(features FeatureMap) {
 func detectCloudFoundry(features FeatureMap) {
 	if Datadog.GetBool("cloud_foundry") {
 		features[CloudFoundry] = struct{}{}
+	}
+}
+
+func detectPodman(features FeatureMap) {
+	if _, err := os.Stat(defaultPodmanContainersStoragePath); err == nil {
+		features[Podman] = struct{}{}
 	}
 }
 

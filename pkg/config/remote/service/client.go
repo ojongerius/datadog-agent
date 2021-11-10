@@ -72,6 +72,10 @@ func (c *HTTPClient) Fetch(ctx context.Context, request *pbgo.ClientLatestConfig
 		return nil, fmt.Errorf("failed to issue request: %w", err)
 	}
 
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("non-200 response code: %d", resp.StatusCode)
+	}
+
 	body, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
@@ -80,7 +84,7 @@ func (c *HTTPClient) Fetch(ctx context.Context, request *pbgo.ClientLatestConfig
 	response := &pbgo.LatestConfigsResponse{}
 	err = msgp.Decode(bytes.NewBuffer(body), response)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, fmt.Errorf("failed to decode response: %w, response: %s", err, string(body))
 	}
 
 	return response, err

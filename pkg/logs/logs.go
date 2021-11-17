@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -126,12 +127,22 @@ func start(getAC func() *autodiscovery.AutoConfig, serverless bool, logsChan cha
 	if serverless {
 		log.Debug("Adding AWS Logs collection source")
 
-		chanSource := config.NewLogSource("AWS Logs", &config.LogsConfig{
+		conf := config.LogsConfig{
 			Type:    config.StringChannelType,
 			Source:  "lambda", // TODO(remy): do we want this to be configurable at some point?
 			Tags:    extraTags,
 			Channel: logsChan,
-		})
+		}
+
+		for _, v := range extraTags {
+			res := strings.Split(v, ":")
+			if len(res) > 1 && res[0] == "service" {
+				log.Debugf("Found service tag, adding to log source config: %service", res[1])
+				conf.Service = res[1]
+			}
+		}
+
+		chanSource := config.NewLogSource("AWS Logs", &conf)
 		sources.AddSource(chanSource)
 	}
 
